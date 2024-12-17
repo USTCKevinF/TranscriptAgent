@@ -1,0 +1,10 @@
+api_key: "your_api_key_here"
+model: "gpt-4o-mini"
+interviewee_name: "姓名"
+interviewee_introduction: "自我介绍"
+revise_iteration: 1
+chunk_size: 5000
+temperature: 0.7
+base_url: "https://vip.apiyi.com/v1"
+input_file: "input/interview_transcript.txt"
+output_file: "output/revised_transcript.txt" 
