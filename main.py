@@ -1,9 +1,11 @@
+import os
 import re
 import yaml
 import tiktoken
 from openai import OpenAI
+from docx import Document
+from docx.shared import RGBColor, Pt
 from concurrent.futures import ThreadPoolExecutor
-import os
 
 
 class InterviewAgent:
@@ -16,20 +18,26 @@ class InterviewAgent:
         with open('prompts.yaml', 'r', encoding='utf-8') as file:
             self.prompts = yaml.safe_load(file)
 
-        self.model = config.get('model', 'gpt-4o')
+        self.model = config.get('model', 'gpt-4o-mini')
         self.interviewee_name = config['interviewee_name']
         self.temperature = config.get('temperature', 0.7)
         self.revise_iteration = config.get('revise_iteration', 1)
-        self.chunk_size = config.get('chunk_size', 5000)
+        self.chunk_size = config.get('chunk_size', 2000)
+
         # 获取transcript_system_prompt
         self.refinement_system_prompt = self.prompts['refinement_system_prompt']
 
         self.refined_introduction = self.refine_introduction(config['interviewee_introduction'])
 
-        self.transcript_system_prompt = self.prompts['transcript_system_prompt'].format(
-            interviewee_name=self.interviewee_name,
-            interviewee_introduction=self.refined_introduction
-        )
+        # self.transcript_system_prompt = self.prompts['transcript_system_prompt'].format(
+        #     interviewee_name=self.interviewee_name,
+        #     interviewee_introduction=self.refined_introduction
+        # )
+
+        self.transcript_system_prompt = self.prompts['transcript_system_prompt_V2']
+
+        # 是否对文本进行优化润色
+        self.enable_polish = config.get('enable_polish', True)
 
     def revise_text(self, unrevised_text: str) -> str:
         """调用 OpenAI API 进行对话"""
@@ -48,7 +56,23 @@ class InterviewAgent:
             print(f"API 调用出错: {str(e)}")
             return None
         
-    
+    def polish_text(self, unrevised_text: str) -> str:
+        """对文本进行优化润色"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": self.prompts['polish_system_prompt']},
+                    {"role": "user", "content": unrevised_text}
+                ],
+                temperature=1.7,
+            )
+            return response.choices[0].message.content
+        
+        except Exception as e:
+            print(f"出错了: {str(e)}")
+            return None
+        
     def refine_introduction(self, interviewee_introduction: str) -> str:
         """优化被采访者的自我介绍"""
         try:
@@ -73,9 +97,9 @@ class InterviewAgent:
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.prompts['check_difference_system_prompt']},
-                    {"role": "user", "content": f"润色前文本: {unrevised_text}\n润色后文本: {revised_text}"}
+                    {"role": "user", "content": f"补充前文本: {unrevised_text}\n补充后文本: {revised_text}"}
                 ],
-                temperature=0.7,
+                temperature=1.0,
             )
             return response.choices[0].message.content 
         
@@ -96,7 +120,7 @@ class InterviewAgent:
                         difference_information=difference_information
                     )}
                 ],
-                temperature=0.7,
+                temperature=0.2,
             )
             return response.choices[0].message.content 
         
@@ -107,14 +131,14 @@ class InterviewAgent:
     def iterative_process_text(self, unrevised_text:str) -> str:
         """处理文本的主流程"""
         try:
-            # 第一次润色
+            # 第一次补充
             revised_text = self.revise_text(unrevised_text)
-            print("第一次润色结果：", revised_text)
+            print("第一次转写结果：", revised_text)
             if revised_text is None:
                 return None
                 
-            # 多次迭代润色和检查
-            for i in range(self.revise_iteration):
+            # 多次迭代补充和检查
+            for _ in range(self.revise_iteration):
                 # 检查差异
                 difference = self.check_difference(unrevised_text, revised_text)
                 print(difference)
@@ -127,10 +151,19 @@ class InterviewAgent:
                     revised_text, 
                     difference
                 )
-                print("补充遗漏信息结果：", revised_text)
+                
+                print("补充前文本：", unrevised_text, "\n补充后文本：", revised_text, "\n差异信息：", difference)
                 if revised_text is None:
                     return None
-                    
+            
+            # 对补充后的文本进行润色
+            if self.enable_polish:
+                print("润色前文本：", revised_text)
+                revised_text = self.polish_text(revised_text)
+                print("润色结果：", revised_text)
+                if revised_text is None:
+                    return None
+                
             return revised_text
         
             
@@ -225,22 +258,81 @@ class InterviewAgent:
     
     def multiprocess_iterative_process_text_list(self, text_list: list) -> list:
         """使用线程池处理文本列表"""
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             revised_text_list = list(executor.map(self.iterative_process_text, text_list))
         return revised_text_list
     
+    def format_interview_text(self, content, output_path):
+
+        # 创建新文档
+        doc = Document()
+
+        # 将英文冒号替换为中文冒号
+        content = content.replace(':', '：')
+        
+        # 按段落分割
+        paragraphs = content.strip().split('\n\n')
+        
+        for para in paragraphs:
+            # 创建新段落
+            p = doc.add_paragraph()
+            
+            # 设置段前距和段后距
+            p.paragraph_format.space_before = Pt(8)  # 段前距设置为8磅
+            p.paragraph_format.space_after = Pt(24)  # 段后距设置为24磅
+
+            if '：' in para:
+                # 分割说话人和内容
+                speaker, text = para.split('：', 1)    
+                # 如果是蜗壳进阶联盟说话
+                if speaker == '蜗壳进阶联盟':
+                    # 添加加粗的红色说话人名字
+                    speaker_run = p.add_run(f'{speaker}：')
+                    speaker_run.bold = True
+                    speaker_run.font.color.rgb = RGBColor(171, 25, 66)
+                    speaker_run.font.name = 'SimHei'  # 设置字体为SimHei
+                    speaker_run.font.size = Pt(15)  # 设置字号为15磅
+                    
+                    # 添加红色的内容
+                    content_run = p.add_run(text)
+                    content_run.bold = True
+                    content_run.font.color.rgb = RGBColor(171, 25, 66)
+                    content_run.font.name = 'SimHei'  # 设置字体为SimHei
+                    content_run.font.size = Pt(15)  # 设置字号为15磅
+
+                else:
+                    # 其他说话人只加粗名字
+                    speaker_run = p.add_run(f'{speaker}：')
+                    speaker_run.bold = True
+                    speaker_run.font.name = 'SimHei'  # 设置字体为SimHei
+                    speaker_run.font.size = Pt(15)  # 设置字号为15磅
+                    
+                    # 添加普通内容
+                    content_run = p.add_run(text)
+                    content_run.font.name = 'SimHei'  # 设置字体为SimHei
+                    content_run.font.size = Pt(15)  # 设置字号为15磅
+        
+            else:
+                # 处理没有说话人的段落
+                content_run = p.add_run(para)
+                content_run.font.name = 'SimHei'  # 设置字体为SimHei
+                content_run.font.size = Pt(15)  # 设置字号为15磅
+
+        # 保存文档
+        doc.save(output_path)
+
     def revise(self, file_path:str, output_path:str):
         converted_format_text = self.convert_format(file_path=file_path)
         chunked_list = self.chunk_text(content_list=converted_format_text)
         revised_result = self.multiprocess_iterative_process_text_list(text_list=chunked_list)
         final_result = ''
         for single_result in revised_result:
-            final_result += single_result
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(final_result)
+            final_result += single_result + '\n\n'
 
+        self.format_interview_text(final_result, output_path)
+    
 if __name__ == "__main__":
-    with open('config.yaml', 'r', encoding='utf-8') as file:
+    with open('./config.yaml', 'r', encoding='utf-8') as file:
         config = yaml.safe_load(file)
     
     # 确保输出目录存在
