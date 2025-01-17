@@ -36,13 +36,13 @@ interviewee_introduction: "被采访者简介"
 
 input_file: "input/interview.txt" # 输入文件路径
 
-output_file: "output/revised.txt" # 输出文件路径
+output_file: "output/revised.docx" # 输出文件路径
 
 temperature: 0.7 # 温度参数
 
-revise_iteration: 1 # 迭代优化次数
+revise_iteration: 1 # 迭代优化次数，次数越多，保留的细节越多
 
-chunk_size: 5000 # 分段大小
+chunk_size: 2000 # 分段大小 分段越小，最终的呈现的细节越多
 ```
 
 

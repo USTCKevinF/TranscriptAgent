@@ -65,7 +65,7 @@ class InterviewAgent:
                     {"role": "system", "content": self.prompts['polish_system_prompt']},
                     {"role": "user", "content": unrevised_text}
                 ],
-                temperature=1.7,
+                # temperature=1.7,
             )
             return response.choices[0].message.content
         
@@ -97,7 +97,7 @@ class InterviewAgent:
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.prompts['check_difference_system_prompt']},
-                    {"role": "user", "content": f"补充前文本: {unrevised_text}\n补充后文本: {revised_text}"}
+                    {"role": "user", "content": f"转写前文本: {unrevised_text}\n转写后文本: {revised_text}"}
                 ],
                 temperature=1.0,
             )
@@ -330,7 +330,7 @@ class InterviewAgent:
             final_result += single_result + '\n\n'
 
         self.format_interview_text(final_result, output_path)
-    
+
 if __name__ == "__main__":
     with open('./config.yaml', 'r', encoding='utf-8') as file:
         config = yaml.safe_load(file)

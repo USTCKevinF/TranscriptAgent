@@ -16,3 +16,6 @@ ENV/
 # IDE
 .idea/
 .vscode/ 
+
+# 实验结果
+results/
