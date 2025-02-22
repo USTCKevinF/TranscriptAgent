@@ -19,15 +19,9 @@ class InterviewAgent:
             self.prompts = yaml.safe_load(file)
 
         self.model = config.get('model', 'gpt-4o-mini')
-        self.interviewee_name = config['interviewee_name']
         self.temperature = config.get('temperature', 0.7)
         self.revise_iteration = config.get('revise_iteration', 1)
         self.chunk_size = config.get('chunk_size', 2000)
-
-        # 获取transcript_system_prompt
-        self.refinement_system_prompt = self.prompts['refinement_system_prompt']
-
-        self.refined_introduction = self.refine_introduction(config['interviewee_introduction'])
 
         # self.transcript_system_prompt = self.prompts['transcript_system_prompt'].format(
         #     interviewee_name=self.interviewee_name,
@@ -71,23 +65,6 @@ class InterviewAgent:
         
         except Exception as e:
             print(f"出错了: {str(e)}")
-            return None
-        
-    def refine_introduction(self, interviewee_introduction: str) -> str:
-        """优化被采访者的自我介绍"""
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self.prompts['refinement_system_prompt']},
-                    {"role": "user", "content": interviewee_introduction}
-                ],
-                temperature=0.7,
-            )
-            return response.choices[0].message.content
-        
-        except Exception as e:
-            print(f"API 调用出错: {str(e)}")
             return None
 
     def check_difference(self, unrevised_text: str, revised_text: str) -> str:
@@ -192,7 +169,6 @@ class InterviewAgent:
     def convert_format(self,file_path:str) -> str:
         content_list = self.read_file_to_list(file_path)
         content_list = [self.remove_time_from_string(line) for line in content_list]
-        content_list = [self.replace_speaker(line, self.interviewee_name) for line in content_list]
         content_list = self.merge_consecutive_speakers(content_list)
 
         return content_list
@@ -284,7 +260,6 @@ class InterviewAgent:
             if '：' in para:
                 # 分割说话人和内容
                 speaker, text = para.split('：', 1)    
-                # 如果是蜗壳进阶联盟说话
                 if speaker == '蜗壳进阶联盟':
                     # 添加加粗的红色说话人名字
                     speaker_run = p.add_run(f'{speaker}：')
